@@ -1,24 +1,28 @@
 from urllib.parse import urlparse
 
 def normalize_url(url):
-    '''
-    Normalize a URL by:
-    - Removing the protocol (https:/http:)
-    - Checking for match in characters regardless of upper/lower case
-    - Normalize regardless of whether it has ONE ending slash or not
+    """
+    Normalizes a URL by:
+    - Removing protocol (http/https)
+    - Converting to lowercase
+    - Removing trailing slashes
     - Removing query parameters and fragments
-    '''
+    
+    Args:
+        url (str): The URL to normalize
+        
+    Returns:
+        str: The normalized URL (e.g. "blog.boot.dev/path")
+    """
+    # Parse the URL
+    parsed = urlparse(url)
+    
+    # Combine netloc (domain) and path
+    host = parsed.netloc.lower()
+    path = parsed.path.lower().rstrip('/')
+    
+    # Construct normalized URL
+    normalized = f"{host}{path}" if path else host
 
-    #parse the url
-    generalUrl = urlparse(url)
-
-    #getting the path name of the url
-    pathName = generalUrl.path
-
-    #convert to lowercase in all cases
-    result = (generalUrl.netloc + pathName).lower()
-
-    #stripping any trailing slashes(/)
-    if (result[len(result) - 1] == "/"):
-        return result[:-1]
-    return result
+    return normalized
+    
