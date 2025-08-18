@@ -1,4 +1,5 @@
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
+from bs4 import BeautifulSoup
 
 def normalize_url(url):
     """
@@ -38,4 +39,37 @@ def get_urls_from_html(html, base_url):
     Returns:
         Array of strings of un-normalized list of all the URLs found within the HTML, and an error if one occurs.
     """
-    pass
+    
+    #create BeautifulSoup object
+    soup = BeautifulSoup(html, 'html.parser')
+
+    #result that we will return
+    urls = []
+    
+    #placeholder for all a tags
+    all_a_tags = soup.find_all('a')
+
+    #traverse through all a tags that we have found
+    for link in all_a_tags:
+        href = link.get('href')
+        if not href or not href.strip():  # Skip empty or whitespace-only hrefs
+            continue
+            
+        try:
+            # Skip non-HTTP links and invalid formats
+            if href.startswith(('mailto:', 'tel:', 'javascript:', '#')) or href == 'invalid-url':
+                continue
+                
+            # Handle relative URLs
+            absolute_url = urljoin(base_url, href)
+            parsed = urlparse(absolute_url)
+            
+            # Only keep URLs with network location and valid scheme
+            if not parsed.netloc or parsed.scheme not in ('http', 'https', ''):
+                continue
+                
+            urls.append(absolute_url)
+        except ValueError:
+            continue
+            
+    return urls
