@@ -28,4 +28,14 @@ def normalize_url(url):
     
 
 def get_urls_from_html(html, base_url):
+    """
+    Reads a page of HTML text and extract links
+
+    Args:
+        html (str): The html file that we look through
+        base_url (str) : Root URL of the website we are crawling
+
+    Returns:
+        Array of strings of un-normalized list of all the URLs found within the HTML, and an error if one occurs.
+    """
     pass
