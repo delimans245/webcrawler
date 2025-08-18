@@ -1,5 +1,6 @@
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
+import requests
 
 def normalize_url(url):
     """
@@ -73,3 +74,36 @@ def get_urls_from_html(html, base_url):
             continue
             
     return urls
+
+def get_html(url):
+    """
+    Fetches HTML content from a URL
+    
+    Args:
+        url (str): URL to fetch
+        
+    Returns:
+        str: HTML content
+        
+    Raises:
+        ValueError: If content-type is not HTML
+        requests.exceptions.RequestException: For HTTP errors or connection issues
+    """
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()  # Raises HTTPError for 4XX/5XX status codes
+        
+        content_type = response.headers.get('content-type', '')
+        if 'text/html' not in content_type:
+            raise ValueError(f"URL did not return HTML (content-type: {content_type})")
+            
+        return response.text
+        
+    except requests.exceptions.RequestException as e:
+        raise requests.exceptions.RequestException(f"Failed to fetch {url}: {str(e)}")
+
+def crawl_page(base_url, current_url=None, pages=None):
+    pass

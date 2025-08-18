@@ -1,5 +1,5 @@
 import sys
-
+from crawl import get_html
 def main():
     if (len(sys.argv) < 2):
         print("no website provided")
@@ -7,8 +7,10 @@ def main():
     elif (len(sys.argv) > 2):
         print("too many arguments")
         sys.exit(1)
-    else:
-        print(f"starting crawl of: {sys.argv[0]}")
+    base_url = sys.argv[1]
+    print(f"starting crawl of: {base_url}")
+    print(get_html(base_url))
+
 
 
 if __name__ == "__main__":
