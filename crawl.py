@@ -26,3 +26,6 @@ def normalize_url(url):
 
     return normalized
     
+
+def get_urls_from_html(html, base_url):
+    pass
