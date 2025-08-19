@@ -1,6 +1,8 @@
+import asyncio
+import aiohttp
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
-import requests
+
 
 def normalize_url(url):
     """
@@ -16,56 +18,31 @@ def normalize_url(url):
     Returns:
         str: The normalized URL (e.g. "blog.boot.dev/path")
     """
-    # Parse the URL
     parsed = urlparse(url)
-    
-    # Combine netloc (domain) and path
     host = parsed.netloc.lower()
     path = parsed.path.lower().rstrip('/')
-    
-    # Construct normalized URL
-    normalized = f"{host}{path}" if path else host
-
-    return normalized
+    return f"{host}{path}" if path else host
     
 
-def get_urls_from_html(html, base_url):
+async def get_urls_from_html(html, base_url):
     """
     Reads a page of HTML text and extract links
-
-    Args:
-        html (str): The html file that we look through
-        base_url (str) : Root URL of the website we are crawling
-
-    Returns:
-        Array of strings of un-normalized list of all the URLs found within the HTML, and an error if one occurs.
     """
-    
-    #create BeautifulSoup object
     soup = BeautifulSoup(html, 'html.parser')
-
-    #result that we will return
     urls = []
     
-    #placeholder for all a tags
-    all_a_tags = soup.find_all('a')
-
-    #traverse through all a tags that we have found
-    for link in all_a_tags:
+    for link in soup.find_all('a'):
         href = link.get('href')
-        if not href or not href.strip():  # Skip empty or whitespace-only hrefs
+        if not href or not href.strip():
             continue
             
         try:
-            # Skip non-HTTP links and invalid formats
-            if href.startswith(('mailto:', 'tel:', 'javascript:', '#')) or href == 'invalid-url':
+            if href.startswith(('mailto:', 'tel:', 'javascript:', '#')):
                 continue
                 
-            # Handle relative URLs
             absolute_url = urljoin(base_url, href)
             parsed = urlparse(absolute_url)
             
-            # Only keep URLs with network location and valid scheme
             if not parsed.netloc or parsed.scheme not in ('http', 'https', ''):
                 continue
                 
@@ -75,86 +52,108 @@ def get_urls_from_html(html, base_url):
             
     return urls
 
-def get_html(url):
-    """
-    Fetches HTML content from a URL
-    
-    Args:
-        url (str): URL to fetch
+class AsyncCrawler:
+    def __init__(self, base_url, max_concurrency=5, max_pages=100):
+        self.base_url = base_url
+        self.base_domain = urlparse(base_url).netloc
+        self.pages = {}
+        self.lock = asyncio.Lock()
+        self.max_concurrency = max_concurrency
+        self.max_pages = max_pages
+        self.semaphore = asyncio.Semaphore(max_concurrency)
+        self.session = None
+
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.session.close()
+
+    async def add_page_visit(self, normalized_url):
+        async with self.lock:
+            if len(self.pages) >= self.max_pages:
+                return False
+                
+            if normalized_url in self.pages:
+                self.pages[normalized_url] += 1
+                return False
+                
+            self.pages[normalized_url] = 1
+            return True
+
+    async def get_html(self, url):
+        try:
+            async with self.semaphore:
+                async with self.session.get(url) as response:
+                    if response.status != 200:
+                        raise ValueError(f"HTTP status {response.status}")
+                    
+                    content_type = response.headers.get('content-type', '')
+                    if 'text/html' not in content_type:
+                        raise ValueError(f"URL did not return HTML (content-type: {content_type})")
+                    
+                    return await response.text()
+        except Exception as e:
+            raise ValueError(f"Failed to fetch {url}: {str(e)}")
+
+    async def crawl_page(self, current_url):
+        # Check if we've reached max pages
+        async with self.lock:
+            if len(self.pages) >= self.max_pages:
+                return
+
+        current_domain = urlparse(current_url).netloc
+        if current_domain != self.base_domain:
+            return
+
+        normalized_url = normalize_url(current_url)
         
-    Returns:
-        str: HTML content
-        
-    Raises:
-        ValueError: If content-type is not HTML
-        requests.exceptions.RequestException: For HTTP errors or connection issues
-    """
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()  # Raises HTTPError for 4XX/5XX status codes
-        
-        content_type = response.headers.get('content-type', '')
-        if 'text/html' not in content_type:
-            raise ValueError(f"URL did not return HTML (content-type: {content_type})")
+        if not await self.add_page_visit(normalized_url):
+            return
+
+        print(f"Crawling: {current_url}")
+
+        try:
+            html = await self.get_html(current_url)
+            urls = await get_urls_from_html(html, current_url)
             
-        return response.text
-        
-    except requests.exceptions.RequestException as e:
-        raise requests.exceptions.RequestException(f"Failed to fetch {url}: {str(e)}")
+            tasks = [asyncio.create_task(self.crawl_page(url)) for url in urls]
+            await asyncio.gather(*tasks)
+            
+        except Exception as e:
+            print(f"Error crawling {current_url}: {str(e)}")
 
-def crawl_page(base_url, current_url=None, pages=None):
+    async def crawl(self):
+        await self.crawl_page(self.base_url)
+        return self.pages
+
+async def crawl_site_async(base_url, max_concurrency=5, max_pages=100):
+    async with AsyncCrawler(base_url, max_concurrency, max_pages) as crawler:
+        return await crawler.crawl()
+
+def print_report(pages, base_url):
     """
-    Args:
-        base_url (str): starting point for url
-        currrent_url (str): the current url the method is on during the recursive process
-        pages (Array): The pages that we have crawled
+    Prints a formatted report of the crawl results
     
-    Returns:
-        A dictionary of normalized arrays with the amount of time they have appeared. 
-        
-    - Make sure the current_url is on the same domain as the base_url. If it's not, just return. We don't want to crawl the entire internet, just the domain in question.
-    - Get a normalized version of the current_url.
-    - If the pages dictionary already has an entry for the normalized version of the current URL, just increment the count and be done, we've already crawled this page.
-    - Otherwise, add an entry to the pages dictionary for the normalized version of the current URL, and set the count to 1.
-    - Get the HTML from the current URL, and add a print statement so you can watch your crawler in real-time.
-    - Assuming all went well with the request, get all the URLs from the response body HTML
-    - Recursively crawl each URL on the page
+    Args:
+        pages (dict): Dictionary of pages and their counts
+        base_url (str): The base URL that was crawled
     """
-
-    if pages is None:
-        pages = {}
-    if current_url is None:
-        current_url = base_url
-
-    # Check if current_url is on the same domain as base_url
-    base_domain = urlparse(base_url).netloc
-    current_domain = urlparse(current_url).netloc
-    if base_domain != current_domain:
-        return pages
-
-    normalized_url = normalize_url(current_url)
-
-    # If we've already crawled this page, increment count and return
-    if normalized_url in pages:
-        pages[normalized_url] += 1
-        return pages
-
-    # Add new page to dictionary with count 1
-    pages[normalized_url] = 1
-    print(f"Crawling: {current_url}")
-
-    try:
-        html = get_html(current_url)
-    except Exception as e:
-        print(f"Could not crawl {current_url}: {str(e)}")
-        return pages
-
-    urls = get_urls_from_html(html, base_url)
-
-    for url in urls:
-        crawl_page(base_url, url, pages)
-
-    return pages
+    # Print report header
+    print("\n" + "="*30)
+    print(f"  REPORT for {base_url}")
+    print("="*30 + "\n")
+    
+    # Sort pages by count (descending) and then by URL (ascending)
+    sorted_pages = sorted(
+        pages.items(),
+        key=lambda item: (-item[1], item[0])
+    )  # Negative count for descending
+    
+    # Print each page entry
+    for url, count in sorted_pages:
+        print(f"Found {count} internal links to {url}")
+    
+    # Print summary
+    print(f"\nTotal pages crawled: {len(pages)}")
