@@ -106,4 +106,55 @@ def get_html(url):
         raise requests.exceptions.RequestException(f"Failed to fetch {url}: {str(e)}")
 
 def crawl_page(base_url, current_url=None, pages=None):
-    pass
+    """
+    Args:
+        base_url (str): starting point for url
+        currrent_url (str): the current url the method is on during the recursive process
+        pages (Array): The pages that we have crawled
+    
+    Returns:
+        A dictionary of normalized arrays with the amount of time they have appeared. 
+        
+    - Make sure the current_url is on the same domain as the base_url. If it's not, just return. We don't want to crawl the entire internet, just the domain in question.
+    - Get a normalized version of the current_url.
+    - If the pages dictionary already has an entry for the normalized version of the current URL, just increment the count and be done, we've already crawled this page.
+    - Otherwise, add an entry to the pages dictionary for the normalized version of the current URL, and set the count to 1.
+    - Get the HTML from the current URL, and add a print statement so you can watch your crawler in real-time.
+    - Assuming all went well with the request, get all the URLs from the response body HTML
+    - Recursively crawl each URL on the page
+    """
+
+    if pages is None:
+        pages = {}
+    if current_url is None:
+        current_url = base_url
+
+    # Check if current_url is on the same domain as base_url
+    base_domain = urlparse(base_url).netloc
+    current_domain = urlparse(current_url).netloc
+    if base_domain != current_domain:
+        return pages
+
+    normalized_url = normalize_url(current_url)
+
+    # If we've already crawled this page, increment count and return
+    if normalized_url in pages:
+        pages[normalized_url] += 1
+        return pages
+
+    # Add new page to dictionary with count 1
+    pages[normalized_url] = 1
+    print(f"Crawling: {current_url}")
+
+    try:
+        html = get_html(current_url)
+    except Exception as e:
+        print(f"Could not crawl {current_url}: {str(e)}")
+        return pages
+
+    urls = get_urls_from_html(html, base_url)
+
+    for url in urls:
+        crawl_page(base_url, url, pages)
+
+    return pages

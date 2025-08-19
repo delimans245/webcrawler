@@ -1,5 +1,5 @@
 import sys
-from crawl import get_html
+from crawl import get_html, crawl_page
 def main():
     if (len(sys.argv) < 2):
         print("no website provided")
@@ -9,7 +9,12 @@ def main():
         sys.exit(1)
     base_url = sys.argv[1]
     print(f"starting crawl of: {base_url}")
-    print(get_html(base_url))
+    pages = crawl_page(base_url)
+
+    print("\nFound pages:")
+    for url, count in pages.items():
+        print(f"{url}: {count}")
+
 
 
 
